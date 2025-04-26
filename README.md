@@ -4,12 +4,12 @@ A real-time dashboard for monitoring Binance Futures tokens with technical indic
 
 ## Features
 
-- Display top 100 Binance Futures tokens by volume
+- Display top N Binance Futures tokens by volume (N is configurable)
 - Technical indicators (EMA34, EMA89) for multiple timeframes
 - Bullish/Bearish pattern detection
 - Buy/Sell signals based on volume patterns
 - Detailed view for each token with multiple timeframe analysis
-- Manual refresh functionality
+- Manual refresh functionality (no auto-refresh)
 - Responsive design
 
 ## Tech Stack
@@ -18,6 +18,14 @@ A real-time dashboard for monitoring Binance Futures tokens with technical indic
 - Backend: Node.js with Express
 - API: Binance Futures API
 - Styling: Tailwind CSS
+
+## Configuration
+
+- **Top Tokens Limit:**
+  - You can change the number of top tokens fetched by editing the `TOP_TOKENS_LIMIT` variable in `backend/services/binanceService.js`:
+    ```js
+    const TOP_TOKENS_LIMIT = 500; // Change this value as needed
+    ```
 
 ## Installation
 
@@ -60,11 +68,26 @@ The backend will run on port 4000 and the frontend will run on port 3000 by defa
   - Should Buy: Show tokens with buy signals
   - Should Sell: Show tokens with sell signals
 - Click "Show" to view detailed timeframe analysis for each token
-- Use the refresh button to manually update data
+- Use the refresh button to manually update data (no auto-refresh)
 
 ## API Endpoints
 
-- `GET /api/tokens`: Fetch top 100 tokens with technical indicators
+- `GET /api/tokens`: Fetch top N tokens with technical indicators
+
+## Project Structure
+
+```
+binance_dashboard/
+├── backend/
+│   ├── app.js
+│   └── services/
+│       └── binanceService.js
+├── frontend/
+│   └── src/
+│       └── App.jsx
+├── .gitignore
+├── README.md
+```
 
 ## Contributing
 
