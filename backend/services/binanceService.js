@@ -11,7 +11,7 @@ const tokenCache = {
 const klinesCache = new Map();
 const KLINES_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
-const TOP_TOKENS_LIMIT = 500; // Change this value to update the number of top tokens fetched
+const TOP_TOKENS_LIMIT = 1000; // Change this value to update the number of top tokens fetched
 
 async function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -46,7 +46,7 @@ async function getKlinesWithRetry(symbol, interval, retryCount = 0) {
 
         return response.data;
     } catch (error) {
-        if ((error.response?.status === 418 || error.response?.status === 429) && retryCount < maxRetries) {
+        if ((error.response ?.status === 418 || error.response ?.status === 429) && retryCount < maxRetries) {
             const delay = baseDelay * Math.pow(2, retryCount);
             console.log(`Rate limited for ${symbol}. Retrying in ${delay}ms...`);
             await sleep(delay);
@@ -66,13 +66,69 @@ function calculateEMA(prices, period) {
     return parseFloat(ema.toFixed(4));
 }
 
+function detectCHoCH(klines) {
+    if (klines.length < 20) return null; // Need enough data points
+
+    // Extract highs, lows, closes, and timestamps
+    const highs = klines.map(k => parseFloat(k[2]));
+    const lows = klines.map(k => parseFloat(k[3]));
+    const closes = klines.map(k => parseFloat(k[4]));
+    const opens = klines.map(k => parseFloat(k[1]));
+    const timestamps = klines.map(k => k[0]);
+
+    // Find swing highs and swing lows
+    function findSwings(arr, lookback = 2) {
+        const swings = [];
+        for (let i = lookback; i < arr.length - lookback; i++) {
+            let isHigh = true,
+                isLow = true;
+            for (let j = 1; j <= lookback; j++) {
+                if (arr[i] <= arr[i - j] || arr[i] <= arr[i + j]) isHigh = false;
+                if (arr[i] >= arr[i - j] || arr[i] >= arr[i + j]) isLow = false;
+            }
+            if (isHigh) swings.push({ type: 'high', value: arr[i], index: i });
+            if (isLow) swings.push({ type: 'low', value: arr[i], index: i });
+        }
+        return swings;
+    }
+
+    const swingHighs = findSwings(highs, 2).filter(s => s.type === 'high');
+    const swingLows = findSwings(lows, 2).filter(s => s.type === 'low');
+
+    // Scan from the end for the most recent CHoCH
+    for (let i = klines.length - 1; i >= 10; i--) {
+        // Look for bullish CHoCH: price breaks above most recent swing high after a downtrend
+        const prevSwingLow = swingLows.filter(s => s.index < i).pop();
+        const prevSwingHigh = swingHighs.filter(s => s.index < i).pop();
+        if (prevSwingHigh && closes[i] > prevSwingHigh.value && closes[i - 1] <= prevSwingHigh.value) {
+            // Confirmed bullish CHoCH
+            return {
+                type: 'bullish',
+                timestamp: timestamps[i],
+                price: closes[i]
+            };
+        }
+        // Look for bearish CHoCH: price breaks below most recent swing low after an uptrend
+        if (prevSwingLow && closes[i] < prevSwingLow.value && closes[i - 1] >= prevSwingLow.value) {
+            // Confirmed bearish CHoCH
+            return {
+                type: 'bearish',
+                timestamp: timestamps[i],
+                price: closes[i]
+            };
+        }
+    }
+    return null;
+}
+
 async function processTokenBatch(tokens, timeframes) {
-    return Promise.all(tokens.map(async (token) => {
+    return Promise.all(tokens.map(async(token) => {
         try {
             const emaValues = {};
-            
+            let lastCHoCH = null;
+
             // Get klines data for each timeframe in parallel
-            await Promise.all(timeframes.map(async (tf) => {
+            await Promise.all(timeframes.map(async(tf) => {
                 try {
                     const klines = await getKlinesWithRetry(token.symbol, tf);
                     const closes = klines.map(k => parseFloat(k[4]));
@@ -83,7 +139,7 @@ async function processTokenBatch(tokens, timeframes) {
                             open: parseFloat(k[1]),
                             volume: parseFloat(k[5])
                         }));
-                        
+
                         const candleColors = last3Candles.map(c => c.close > c.open ? 'green' : 'red');
                         const volumes = last3Candles.map(c => c.volume);
 
@@ -91,6 +147,15 @@ async function processTokenBatch(tokens, timeframes) {
                             colors: candleColors,
                             volumes: volumes
                         };
+
+                        // Detect CHoCH only on 15m timeframe
+                        const choc = detectCHoCH(klines);
+                        if (choc) {
+                            lastCHoCH = {
+                                ...choc,
+                                timeframe: '15m'
+                            };
+                        }
                     }
 
                     emaValues[`ema34_${tf}`] = calculateEMA(closes, 34);
@@ -105,6 +170,7 @@ async function processTokenBatch(tokens, timeframes) {
                 currentPrice: parseFloat(token.lastPrice),
                 volume: parseFloat(token.quoteVolume),
                 priceChangePercent: parseFloat(token.priceChangePercent),
+                lastCHoCH,
                 ...emaValues
             };
         } catch (error) {
@@ -144,7 +210,7 @@ async function getTopTokensData() {
             const batch = tokens.slice(i, i + batchSize);
             const batchResults = await processTokenBatch(batch, timeframes);
             results.push(...batchResults.filter(Boolean));
-            
+
             if (i + batchSize < tokens.length) {
                 await sleep(500); // Small delay between batches to avoid rate limits
             }
