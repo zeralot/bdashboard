@@ -12,6 +12,7 @@ function App() {
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [isRefreshAnimating, setIsRefreshAnimating] = useState(false);
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const isInitialMount = useRef(true);
   const fetchInProgress = useRef(false);
 
@@ -136,7 +137,54 @@ function App() {
     return num.toFixed(2);
   };
 
-  const filteredTokens = getFilteredTokens();
+  const formatTimeSinceCHoCH = (timestamp) => {
+    const now = Date.now();
+    const diff = now - timestamp;
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (days > 0) return `${days}d ago`;
+    if (hours > 0) return `${hours}h ago`;
+    if (minutes > 0) return `${minutes}m ago`;
+    return 'Just now';
+  };
+
+  const handleSort = (key) => {
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+  };
+
+  const getSortedTokens = () => {
+    const filtered = getFilteredTokens();
+    if (!sortConfig.key) return filtered;
+
+    return [...filtered].sort((a, b) => {
+      if (sortConfig.key === 'choch') {
+        if (!a.lastCHoCH && !b.lastCHoCH) return 0;
+        if (!a.lastCHoCH) return 1;
+        if (!b.lastCHoCH) return -1;
+        return sortConfig.direction === 'asc' 
+          ? a.lastCHoCH.timestamp - b.lastCHoCH.timestamp
+          : b.lastCHoCH.timestamp - a.lastCHoCH.timestamp;
+      }
+      if (sortConfig.key === 'volume') {
+        return sortConfig.direction === 'asc'
+          ? a.volume - b.volume
+          : b.volume - a.volume;
+      }
+      return 0;
+    });
+  };
+
+  const filteredTokens = getSortedTokens();
 
   return (
     <div className="min-h-screen bg-gray-800 text-white">
@@ -243,10 +291,21 @@ function App() {
               <tr>
                 <th className="px-4 py-2 text-left">Symbol</th>
                 <th className="px-4 py-2 text-right">Price</th>
-                <th className="px-4 py-2 text-right">Volume</th>
+                <th 
+                  className="px-4 py-2 text-right cursor-pointer hover:bg-gray-700"
+                  onClick={() => handleSort('volume')}
+                >
+                  Volume {sortConfig.key === 'volume' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                </th>
                 <th className="px-4 py-2 text-center">EMA34 (5m)</th>
                 <th className="px-4 py-2 text-center">EMA89 (5m)</th>
                 <th className="px-4 py-2 text-center">Signal</th>
+                <th 
+                  className="px-4 py-2 text-center cursor-pointer hover:bg-gray-700"
+                  onClick={() => handleSort('choch')}
+                >
+                  CHoCH {sortConfig.key === 'choch' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                </th>
                 <th className="px-4 py-2 text-center">Details</th>
               </tr>
             </thead>
@@ -255,14 +314,25 @@ function App() {
                 <React.Fragment key={token.symbol}>
                   <tr className={`border-t border-gray-800 ${token.rowClass}`}>
                     <td className="px-4 py-2">
-                      <a
-                        href={`https://www.binance.com/en/futures/${token.symbol}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-400 hover:text-blue-300"
-                      >
-                        {token.symbol}
-                      </a>
+                      <div className="flex items-center gap-2">
+                        <a
+                          href={`https://www.binance.com/en/futures/${token.symbol}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-400 hover:text-blue-300"
+                        >
+                          {token.symbol}
+                        </a>
+                        <button
+                          onClick={() => copyToClipboard(token.symbol)}
+                          className="p-1 text-gray-400 hover:text-white"
+                          title="Copy symbol"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                          </svg>
+                        </button>
+                      </div>
                     </td>
                     <td className="px-4 py-2 text-right">
                       {token.currentPrice.toFixed(4)}
@@ -286,6 +356,17 @@ function App() {
                       }>
                         {token.signal || '-'}
                       </span>
+                    </td>
+                    <td className="px-4 py-2 text-center">
+                      {token.lastCHoCH ? (
+                        <span className={
+                          token.lastCHoCH.type === 'bullish'
+                            ? 'text-green-400'
+                            : 'text-red-400'
+                        }>
+                          {formatTimeSinceCHoCH(token.lastCHoCH.timestamp)}
+                        </span>
+                      ) : '-'}
                     </td>
                     <td className="px-4 py-2 text-center">
                       <button
