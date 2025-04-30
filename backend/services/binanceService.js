@@ -126,6 +126,7 @@ async function processTokenBatch(tokens, timeframes) {
         try {
             const emaValues = {};
             let lastCHoCH = null;
+            let lastCHoCHH1 = null;
 
             // Get klines data for each timeframe in parallel
             await Promise.all(timeframes.map(async(tf) => {
@@ -148,12 +149,23 @@ async function processTokenBatch(tokens, timeframes) {
                             volumes: volumes
                         };
 
-                        // Detect CHoCH only on 15m timeframe
+                        // Detect CHoCH on 15m timeframe
                         const choc = detectCHoCH(klines);
                         if (choc) {
                             lastCHoCH = {
                                 ...choc,
                                 timeframe: '15m'
+                            };
+                        }
+                    }
+
+                    if (tf === '1h') {
+                        // Detect CHoCH on 1h timeframe
+                        const choc = detectCHoCH(klines);
+                        if (choc) {
+                            lastCHoCHH1 = {
+                                ...choc,
+                                timeframe: '1h'
                             };
                         }
                     }
@@ -171,6 +183,7 @@ async function processTokenBatch(tokens, timeframes) {
                 volume: parseFloat(token.quoteVolume),
                 priceChangePercent: parseFloat(token.priceChangePercent),
                 lastCHoCH,
+                lastCHoCHH1,
                 ...emaValues
             };
         } catch (error) {
