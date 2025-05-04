@@ -66,55 +66,100 @@ function calculateEMA(prices, period) {
     return parseFloat(ema.toFixed(4));
 }
 
-function detectCHoCH(klines) {
-    if (klines.length < 20) return null; // Need enough data points
+function detectBOS(klines) {
+    if (klines.length < 10) return null;
 
-    // Extract highs, lows, closes, and timestamps
     const highs = klines.map(k => parseFloat(k[2]));
     const lows = klines.map(k => parseFloat(k[3]));
     const closes = klines.map(k => parseFloat(k[4]));
     const opens = klines.map(k => parseFloat(k[1]));
     const timestamps = klines.map(k => k[0]);
 
-    // Find swing highs and swing lows
-    function findSwings(arr, lookback = 2) {
-        const swings = [];
-        for (let i = lookback; i < arr.length - lookback; i++) {
-            let isHigh = true,
-                isLow = true;
-            for (let j = 1; j <= lookback; j++) {
-                if (arr[i] <= arr[i - j] || arr[i] <= arr[i + j]) isHigh = false;
-                if (arr[i] >= arr[i - j] || arr[i] >= arr[i + j]) isLow = false;
-            }
-            if (isHigh) swings.push({ type: 'high', value: arr[i], index: i });
-            if (isLow) swings.push({ type: 'low', value: arr[i], index: i });
-        }
-        return swings;
-    }
+    // Look for the last 3-4 candles for BOS
+    for (let i = klines.length - 1; i >= 3; i--) {
+        // Bearish BOS: price breaks below previous structure low
+        const prevLows = lows.slice(i - 3, i);
+        const prevStructureLow = Math.min(...prevLows);
+        const currentCandle = {
+            open: opens[i],
+            close: closes[i],
+            high: highs[i],
+            low: lows[i]
+        };
 
-    const swingHighs = findSwings(highs, 2).filter(s => s.type === 'high');
-    const swingLows = findSwings(lows, 2).filter(s => s.type === 'low');
-
-    // Scan from the end for the most recent CHoCH
-    for (let i = klines.length - 1; i >= 10; i--) {
-        // Look for bullish CHoCH: price breaks above most recent swing high after a downtrend
-        const prevSwingLow = swingLows.filter(s => s.index < i).pop();
-        const prevSwingHigh = swingHighs.filter(s => s.index < i).pop();
-        if (prevSwingHigh && closes[i] > prevSwingHigh.value && closes[i - 1] <= prevSwingHigh.value) {
-            // Confirmed bullish CHoCH
-            return {
-                type: 'bullish',
-                timestamp: timestamps[i],
-                price: closes[i]
-            };
-        }
-        // Look for bearish CHoCH: price breaks below most recent swing low after an uptrend
-        if (prevSwingLow && closes[i] < prevSwingLow.value && closes[i - 1] >= prevSwingLow.value) {
-            // Confirmed bearish CHoCH
+        if (currentCandle.close < prevStructureLow &&
+            (currentCandle.open > prevStructureLow || currentCandle.high > prevStructureLow)) {
             return {
                 type: 'bearish',
                 timestamp: timestamps[i],
-                price: closes[i]
+                price: currentCandle.close,
+                structureLevel: prevStructureLow
+            };
+        }
+
+        // Bullish BOS: price breaks above previous structure high
+        const prevHighs = highs.slice(i - 3, i);
+        const prevStructureHigh = Math.max(...prevHighs);
+        if (currentCandle.close > prevStructureHigh &&
+            (currentCandle.open < prevStructureHigh || currentCandle.low < prevStructureHigh)) {
+            return {
+                type: 'bullish',
+                timestamp: timestamps[i],
+                price: currentCandle.close,
+                structureLevel: prevStructureHigh
+            };
+        }
+    }
+    return null;
+}
+
+function detectCHoCH(klines) {
+    if (klines.length < 10) return null;
+
+    const highs = klines.map(k => parseFloat(k[2]));
+    const lows = klines.map(k => parseFloat(k[3]));
+    const closes = klines.map(k => parseFloat(k[4]));
+    const opens = klines.map(k => parseFloat(k[1]));
+    const timestamps = klines.map(k => k[0]);
+
+    // Scan from the end for the most recent CHoCH
+    for (let i = klines.length - 1; i >= 3; i--) {
+        const currentCandle = {
+            open: opens[i],
+            close: closes[i],
+            high: highs[i],
+            low: lows[i]
+        };
+
+        // Look for bullish CHoCH
+        const prevHighs = highs.slice(Math.max(0, i - 3), i);
+        const prevHigh = Math.max(...prevHighs);
+        const beforeHighs = highs.slice(Math.max(0, i - 6), i - 2);
+
+        if (currentCandle.close > prevHigh &&
+            (currentCandle.open < prevHigh || currentCandle.low < prevHigh) &&
+            Math.max(...beforeHighs) > prevHigh) {
+            return {
+                type: 'bullish',
+                timestamp: timestamps[i],
+                price: currentCandle.close,
+                structureLevel: prevHigh
+            };
+        }
+
+        // Look for bearish CHoCH
+        const prevLows = lows.slice(Math.max(0, i - 3), i);
+        const prevLow = Math.min(...prevLows);
+        const beforeLows = lows.slice(Math.max(0, i - 6), i - 2);
+
+        if (currentCandle.close < prevLow &&
+            (currentCandle.open > prevLow || currentCandle.high > prevLow) &&
+            Math.min(...beforeLows) < prevLow) {
+            return {
+                type: 'bearish',
+                timestamp: timestamps[i],
+                price: currentCandle.close,
+                structureLevel: prevLow
             };
         }
     }
@@ -127,6 +172,8 @@ async function processTokenBatch(tokens, timeframes) {
             const emaValues = {};
             let lastCHoCH = null;
             let lastCHoCHH1 = null;
+            let lastBOSM15 = null;
+            let lastBOSH1 = null;
 
             // Get klines data for each timeframe in parallel
             await Promise.all(timeframes.map(async(tf) => {
@@ -149,7 +196,7 @@ async function processTokenBatch(tokens, timeframes) {
                             volumes: volumes
                         };
 
-                        // Detect CHoCH on 15m timeframe
+                        // Detect CHoCH and BOS on 15m timeframe
                         const choc = detectCHoCH(klines);
                         if (choc) {
                             lastCHoCH = {
@@ -157,14 +204,30 @@ async function processTokenBatch(tokens, timeframes) {
                                 timeframe: '15m'
                             };
                         }
+
+                        const bos = detectBOS(klines);
+                        if (bos) {
+                            lastBOSM15 = {
+                                ...bos,
+                                timeframe: '15m'
+                            };
+                        }
                     }
 
                     if (tf === '1h') {
-                        // Detect CHoCH on 1h timeframe
+                        // Detect CHoCH and BOS on 1h timeframe
                         const choc = detectCHoCH(klines);
                         if (choc) {
                             lastCHoCHH1 = {
                                 ...choc,
+                                timeframe: '1h'
+                            };
+                        }
+
+                        const bos = detectBOS(klines);
+                        if (bos) {
+                            lastBOSH1 = {
+                                ...bos,
                                 timeframe: '1h'
                             };
                         }
@@ -184,6 +247,8 @@ async function processTokenBatch(tokens, timeframes) {
                 priceChangePercent: parseFloat(token.priceChangePercent),
                 lastCHoCH,
                 lastCHoCHH1,
+                lastBOSM15,
+                lastBOSH1,
                 ...emaValues
             };
         } catch (error) {

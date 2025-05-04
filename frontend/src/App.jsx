@@ -150,6 +150,18 @@ function App() {
     return 'Just now';
   };
 
+  const formatExactTime = (timestamp) => {
+    const date = new Date(timestamp);
+    return date.toLocaleString('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour12: false
+    });
+  };
+
   const handleSort = (key) => {
     let direction = 'asc';
     if (sortConfig.key === key && sortConfig.direction === 'asc') {
@@ -174,6 +186,30 @@ function App() {
         return sortConfig.direction === 'asc' 
           ? a.lastCHoCH.timestamp - b.lastCHoCH.timestamp
           : b.lastCHoCH.timestamp - a.lastCHoCH.timestamp;
+      }
+      if (sortConfig.key === 'chochH1') {
+        if (!a.lastCHoCHH1 && !b.lastCHoCHH1) return 0;
+        if (!a.lastCHoCHH1) return 1;
+        if (!b.lastCHoCHH1) return -1;
+        return sortConfig.direction === 'asc' 
+          ? a.lastCHoCHH1.timestamp - b.lastCHoCHH1.timestamp
+          : b.lastCHoCHH1.timestamp - a.lastCHoCHH1.timestamp;
+      }
+      if (sortConfig.key === 'bosM15') {
+        if (!a.lastBOSM15 && !b.lastBOSM15) return 0;
+        if (!a.lastBOSM15) return 1;
+        if (!b.lastBOSM15) return -1;
+        return sortConfig.direction === 'asc' 
+          ? a.lastBOSM15.timestamp - b.lastBOSM15.timestamp
+          : b.lastBOSM15.timestamp - a.lastBOSM15.timestamp;
+      }
+      if (sortConfig.key === 'bosH1') {
+        if (!a.lastBOSH1 && !b.lastBOSH1) return 0;
+        if (!a.lastBOSH1) return 1;
+        if (!b.lastBOSH1) return -1;
+        return sortConfig.direction === 'asc' 
+          ? a.lastBOSH1.timestamp - b.lastBOSH1.timestamp
+          : b.lastBOSH1.timestamp - a.lastBOSH1.timestamp;
       }
       if (sortConfig.key === 'volume') {
         return sortConfig.direction === 'asc'
@@ -297,20 +333,36 @@ function App() {
                 >
                   Volume {sortConfig.key === 'volume' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                 </th>
-                <th className="px-4 py-2 text-center">EMA34 (5m)</th>
-                <th className="px-4 py-2 text-center">EMA89 (5m)</th>
                 <th className="px-4 py-2 text-center">Signal</th>
                 <th 
                   className="px-4 py-2 text-center cursor-pointer hover:bg-gray-700"
                   onClick={() => handleSort('choch')}
                 >
-                  CHoCH {sortConfig.key === 'choch' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                  CHoCH (M15) {sortConfig.key === 'choch' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                </th>
+                <th 
+                  className="px-4 py-2 text-center cursor-pointer hover:bg-gray-700"
+                  onClick={() => handleSort('chochH1')}
+                >
+                  CHoCH (H1) {sortConfig.key === 'chochH1' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                </th>
+                <th 
+                  className="px-4 py-2 text-center cursor-pointer hover:bg-gray-700"
+                  onClick={() => handleSort('bosM15')}
+                >
+                  BOS (M15) {sortConfig.key === 'bosM15' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                </th>
+                <th 
+                  className="px-4 py-2 text-center cursor-pointer hover:bg-gray-700"
+                  onClick={() => handleSort('bosH1')}
+                >
+                  BOS (H1) {sortConfig.key === 'bosH1' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                 </th>
                 <th className="px-4 py-2 text-center">Details</th>
               </tr>
             </thead>
             <tbody>
-              {filteredTokens.map((token) => (
+              {getSortedTokens().map(token => (
                 <React.Fragment key={token.symbol}>
                   <tr className={`border-t border-gray-800 ${token.rowClass}`}>
                     <td className="px-4 py-2">
@@ -341,12 +393,6 @@ function App() {
                       {formatNumber(token.volume)}
                     </td>
                     <td className="px-4 py-2 text-center">
-                      {token.ema34_5m.toFixed(4)}
-                    </td>
-                    <td className="px-4 py-2 text-center">
-                      {token.ema89_5m.toFixed(4)}
-                    </td>
-                    <td className="px-4 py-2 text-center">
                       <span className={
                         token.signal === 'Should Buy' 
                           ? 'text-green-400' 
@@ -359,12 +405,57 @@ function App() {
                     </td>
                     <td className="px-4 py-2 text-center">
                       {token.lastCHoCH ? (
-                        <span className={
-                          token.lastCHoCH.type === 'bullish'
-                            ? 'text-green-400'
-                            : 'text-red-400'
-                        }>
+                        <span 
+                          className={
+                            token.lastCHoCH.type === 'bullish'
+                              ? 'text-green-400 cursor-help'
+                              : 'text-red-400 cursor-help'
+                          }
+                          title={formatExactTime(token.lastCHoCH.timestamp)}
+                        >
                           {formatTimeSinceCHoCH(token.lastCHoCH.timestamp)}
+                        </span>
+                      ) : '-'}
+                    </td>
+                    <td className="px-4 py-2 text-center">
+                      {token.lastCHoCHH1 ? (
+                        <span 
+                          className={
+                            token.lastCHoCHH1.type === 'bullish'
+                              ? 'text-green-400 cursor-help'
+                              : 'text-red-400 cursor-help'
+                          }
+                          title={formatExactTime(token.lastCHoCHH1.timestamp)}
+                        >
+                          {formatTimeSinceCHoCH(token.lastCHoCHH1.timestamp)}
+                        </span>
+                      ) : '-'}
+                    </td>
+                    <td className="px-4 py-2 text-center">
+                      {token.lastBOSM15 ? (
+                        <span 
+                          className={
+                            token.lastBOSM15.type === 'bullish'
+                              ? 'text-green-400 cursor-help'
+                              : 'text-red-400 cursor-help'
+                          }
+                          title={formatExactTime(token.lastBOSM15.timestamp)}
+                        >
+                          {formatTimeSinceCHoCH(token.lastBOSM15.timestamp)}
+                        </span>
+                      ) : '-'}
+                    </td>
+                    <td className="px-4 py-2 text-center">
+                      {token.lastBOSH1 ? (
+                        <span 
+                          className={
+                            token.lastBOSH1.type === 'bullish'
+                              ? 'text-green-400 cursor-help'
+                              : 'text-red-400 cursor-help'
+                          }
+                          title={formatExactTime(token.lastBOSH1.timestamp)}
+                        >
+                          {formatTimeSinceCHoCH(token.lastBOSH1.timestamp)}
                         </span>
                       ) : '-'}
                     </td>
@@ -381,9 +472,9 @@ function App() {
                     <tr className="bg-gray-800">
                       <td colSpan="7" className="px-4 py-2">
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                          {['15m', '1h', '4h', '1d'].map(timeframe => (
+                          {['5m', '15m', '1h', '4h', '1d'].map(timeframe => (
                             <div key={timeframe} className="bg-gray-900 p-4 rounded">
-                              <h3 className="font-bold mb-2">{timeframe} EMAs</h3>
+                              <h3 className="font-bold mb-2">{timeframe}</h3>
                               <div className="space-y-1">
                                 <p>EMA34: {token[`ema34_${timeframe}`].toFixed(4)}</p>
                                 <p>EMA89: {token[`ema89_${timeframe}`].toFixed(4)}</p>
